@@ -105,7 +105,7 @@ wheel_compatible() {
     # 去掉前导零
     w_minor=$((10#$w_minor))
 
-    if [ "$w_major" = "$PY_MAJOR" ] && [ "$w_minor" = "$PY_MINOR" ]; then
+    if [ "$w_major" -eq "$PY_MAJOR" ] 2>/dev/null && [ "$w_minor" -eq "$PY_MINOR" ] 2>/dev/null; then
         return 0
     fi
     return 1
@@ -306,16 +306,20 @@ except: pass
                 -o "$WHEEL_DIR/$_matched" && _DL_COUNT=$((_DL_COUNT + 1)) || true
         fi
     done
-    [ "$_DL_COUNT" -gt 0 ] && echo -e "  ${GREEN}✓${NC} 已下载 $_DL_COUNT 个预编译 wheel" \
-        || echo -e "  ${DIM}  无匹配轮子${NC}"
+    if [ "$_DL_COUNT" -gt 0 ]; then
+        echo -e "  ${GREEN}✓${NC} 已下载 $_DL_COUNT 个预编译 wheel"
+    else
+        echo -e "  ${YELLOW}🔧 无预编译 wheel，将编译安装（需 clang/rust，耗时较长）${NC}"
+    fi
 fi
 
 # 安装匹配的本地轮子（pydantic_core 必须先装）
 for whl in "$WHEEL_DIR"/pydantic_core-*.whl; do
-    [ -f "$whl" ] && wheel_compatible "$whl" || continue
-    doing "  安装 pydantic_core（预编译）..."
-    python3 -m pip install "$whl" --quiet 2>&1 && _INSTALLED_WHEELS="$_INSTALLED_WHEELS pydantic_core"
-    break
+    if [ -f "$whl" ] && wheel_compatible "$whl"; then
+        doing "  安装 pydantic_core（预编译）..."
+        python3 -m pip install "$whl" --quiet 2>&1 && _INSTALLED_WHEELS="$_INSTALLED_WHEELS pydantic_core"
+        break
+    fi
 done
 
 for whl in "$WHEEL_DIR"/*.whl; do
@@ -337,9 +341,22 @@ fi
 echo -e "  ${DIM}── Line 2：检查缺失依赖 ──${NC}"
 
 # 找出还没装的关键包
+declare -A _PKG_MODULE=(
+    [PyYAML]=yaml
+    [tiktoken]=tiktoken
+    [fastapi]=fastapi
+    [uvicorn]=uvicorn
+    [httpx]=httpx
+    [requests]=requests
+    [rich]=rich
+    [prompt_toolkit]=prompt_toolkit
+    [tree_sitter]=tree_sitter
+    [watchdog]=watchdog
+)
 _MISSING=""
 for _pkg in $_CRITICAL_PKGS; do
-    python3 -c "import $_pkg" 2>/dev/null || _MISSING="$_MISSING $_pkg"
+    _mod="${_PKG_MODULE[$_pkg]:-$_pkg}"
+    python3 -c "import $_mod" 2>/dev/null || _MISSING="$_MISSING $_pkg"
 done
 
 if [ -n "$_MISSING" ]; then
@@ -381,7 +398,7 @@ done
 if [ "$_ALL_OK" = false ]; then
     echo ""
     echo -e "  ${YELLOW}⚠️  部分依赖未安装，可能影响 Web 模式运行${NC}"
-    echo -e "  ${DIM}     可手动执行: pip install PyYAML tiktoken fastapi uvicorn httpx${NC}"
+    echo -e "  ${DIM}     可手动执行: pip install requests rich prompt_toolkit PyYAML tiktoken fastapi uvicorn httpx tree_sitter watchdog${NC}"
 fi
 echo ""
 
@@ -407,7 +424,9 @@ elif [ -f "$SCRIPT_DIR/main.py" ]; then
     # 核心子目录
     for dir in chat commands tools utils security skills \
                icon web; do
-        [ -d "$SCRIPT_DIR/$dir" ] && cp -r "$SCRIPT_DIR/$dir" "$INSTALL_DIR/"
+        [ -d "$SCRIPT_DIR/$dir" ] || continue
+        rm -rf "$INSTALL_DIR/$dir"
+        cp -r "$SCRIPT_DIR/$dir" "$INSTALL_DIR/"
     done
 
     # wheels/
@@ -424,6 +443,7 @@ else
     _TMP_DIR=$(mktemp -d)
     unzip -q "$_TMP_ZIP" -d "$_TMP_DIR"
     rm -f "$_TMP_ZIP"
+    mkdir -p "$INSTALL_DIR"
     cp -r "$_TMP_DIR/tiao-main/"* "$INSTALL_DIR/"
     rm -rf "$_TMP_DIR"
     ok "文件部署完成（从 GitHub 下载）"
@@ -504,4 +524,5 @@ echo ""
 WHEEL_COUNT=$(ls "$SCRIPT_DIR/wheels"/*.whl 2>/dev/null | wc -l)
 echo -e "  ${DIM}📦 已纳入 ${WHEEL_COUNT} 个预编译 wheel${NC}"
 echo -e "  ${DIM}💡 pip install 将优先使用本地 wheel，跳过编译${NC}"
+echo -e "  ${DIM}💡 如需剪贴板支持: pkg install termux-api${NC}"
 echo ""
