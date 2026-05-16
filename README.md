@@ -11,10 +11,17 @@ Termux 终端内的 AI 助手，CLI REPL(核心) + Web UI 双模式。支持流�
 ## 📦 快速开始
 
 ```bash
-# 方式一：全自动安装（推荐）
-bash install.sh
+# 方式一：一键安装（推荐）
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ycygg233/tiao/main/install.sh)"
+```
 
-# 方式二：手动安装（当 install.sh 的预编译轮子不匹配你的 Python 版本时）
+```bash
+# 方式二：全自动安装（下载后）
+bash install.sh
+```
+
+```bash
+# 方式三：手动安装（当 install.sh 的预编译轮子不匹配你的 Python 版本时）
 cd ~/tiao                        # 进入项目目录
 pip install -r requirements.txt
 python main.py
