@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+*.bak
+*.tmp
+*.pyc
+.session/
+_smoke_tmp/

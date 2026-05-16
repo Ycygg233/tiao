@@ -1,0 +1,149 @@
+# audit_rules.yaml — 审计规则（序列模式匹配，可热加载）
+# pattern: 工具名序列或参数内容关键字
+# window: 最近 N 次操作窗口内匹配
+# action: alert(告警) | confirm(弹窗确认)
+# severity: high | medium | low
+
+rules:
+
+  # ── 信息泄露 ──
+
+  - name: "越权读敏感路径"
+    severity: high
+    pattern: ["read_file"]
+    extra: { path_match: ["/proc/", "/sys/", "/data/data", ".tiao_key", ".tiao_sudo"] }
+    window: 3
+    action: alert
+
+  # ── 写入/修改 ──
+
+  - name: "批量写可执行文件"
+    severity: medium
+    pattern: ["write_file", "write_file"]
+    window: 6
+    desc: 短时间内连续写入多个文件，可能是恶意脚本扩散
+    action: alert
+
+  - name: "写敏感路径"
+    severity: high
+    pattern: ["write_file"]
+    extra: { path_match: [".tiao_key", ".tiao_sudo", "/system/", "/etc/"] }
+    window: 3
+    desc: 写入 API Key 或系统关键路径
+    action: confirm
+
+  - name: "写入 .py 脚本"
+    severity: medium
+    pattern: ["write_file"]
+    extra: { path_match: [".py"] }
+    window: 10
+    desc: AI 写入 Python 脚本，可能是恶意代码植入
+    action: alert
+
+  # ── 替换/修改 ──
+
+  - name: "批量替换内容"
+    severity: medium
+    pattern: ["replace", "replace"]
+    window: 6
+    desc: 短时间内批量替换文件内容
+    action: alert
+
+  - name: "替换敏感文件"
+    severity: high
+    pattern: ["replace"]
+    extra: { path_match: [".tiao_key", ".tiao_sudo", "config.py", "sandbox.py", "audit"] }
+    window: 5
+    desc: 替换安全配置或 Key 文件
+    action: confirm
+
+  # ── 删除 ──
+
+  - name: "删除操作"
+    severity: high
+    pattern: ["delete"]
+    window: 3
+    desc: AI 执行文件删除
+    action: confirm
+
+  - name: "批量删除"
+    severity: high
+    pattern: ["delete", "delete", "delete"]
+    window: 8
+    desc: 短时间内连续删除多个文件
+    action: confirm
+
+  # ── 重命名/移动 ──
+
+  - name: "重命名操作"
+    severity: medium
+    pattern: ["rename"]
+    window: 5
+    desc: AI 执行文件重命名/移动
+    action: alert
+
+  - name: "重命名覆盖关键文件"
+    severity: high
+    pattern: ["rename"]
+    extra: { path_match: [".tiao_key", ".tiao_sudo", "sandbox.py", "audit.py"] }
+    window: 5
+    desc: 重命名可能覆盖安全文件
+    action: confirm
+
+  # ── 组合操作 ──
+
+  - name: "读取 + 删除组合"
+    severity: high
+    pattern: ["read_file", "delete"]
+    window: 5
+    desc: 先读后删，可能是窃取后销毁证据
+    action: alert
+
+  - name: "替换 + 写入组合"
+    severity: medium
+    pattern: ["replace", "write_file"]
+    window: 6
+    desc: 替换后写入新文件，可能是代码注入
+    action: alert
+
+  # ── 沙箱逃逸 ──
+
+  - name: "沙箱逃逸探测"
+    severity: high
+    pattern: ["run_python", "__subclasses__"]
+    window: 3
+    desc: run_python 代码中包含 __subclasses__ 逃逸技术
+    action: confirm
+
+  - name: "sys.modules 探测"
+    severity: high
+    pattern: ["run_python", "sys.modules"]
+    window: 3
+    desc: run_python 代码中尝试访问 sys.modules 探测环境
+    action: alert
+
+  - name: "连续 Python 执行"
+    severity: low
+    pattern: ["run_python", "run_python"]
+    window: 5
+    desc: 短时间内连续执行 Python 代码
+    action: alert
+
+  # ── 目录扫描 ──
+
+  - name: "高频文件扫描"
+    severity: low
+    pattern: ["scan_dir", "scan_dir", "scan_dir"]
+    window: 8
+    desc: 短时间内高频扫描目录结构
+    action: alert
+
+  # ── 创建目录 ──
+
+  - name: "创建敏感目录"
+    severity: medium
+    pattern: ["create_dir"]
+    extra: { path_match: ["/system/", "/etc/", "/data/"] }
+    window: 5
+    desc: 在系统关键路径下创建目录
+    action: alert

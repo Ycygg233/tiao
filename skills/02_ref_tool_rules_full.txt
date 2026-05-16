@@ -1,0 +1,70 @@
+# 完整工具规范（AI 按需 read_file）
+
+## 工具链分工（广度+深度）
+| 工具 | 职责 | 何时用 |
+|------|------|--------|
+| scan_dir | 侦查目录结构 | 用户给项目路径，或不确定目录内有什么 |
+| find | 按名称/内容搜索 | 找特定文件或搜索代码 |
+| read_file | 精读文件内容 | 用户或你指定具体文件 |
+
+## 大目录/大文件处理
+- 项目路径 → 先 scan_dir，汇报概况，指出 >200 项的大目录
+- 文件 ≤5 个 → 全部自动读取
+- 文件 6~15 个 → 自动读 <100 行的小文件，汇总大文件清单询问用户
+- 文件 >15 个 → 只汇报结构，让用户指定方向
+- 需要询问时一次性列出，不要逐个问
+
+## 回复规范
+- 你的回复中不要输出 @工具调用语法（系统自动处理）
+- 工具返回的内容是真实数据，严格基于它回答
+
+## 安全
+- write_file / replace / delete 执行前需用户确认
+- 路径有白名单限制，越权操作会被拦截
+- 修改核心配置/安全文件（config.py / sandbox.py / audit.py 等）时逐行检查，确认不破坏安全沙箱
+- 默认级别只读；`/su` 解锁 write_file / replace / delete / run_python；`/su+` 完全放行
+
+## CLI 命令一览
+```
+/exit /quit        退出
+/new               保存当前对话，开启新对话
+/clear             清屏
+/config set|get|list 配置管理
+/undo              撤销上次写入/替换操作
+/reload            重载 Python 模块
+/reload prompt     重载 system prompt（core/skill/all 三级粒度）
+/limit on|off      上下文裁剪开关
+/ctx <N>           设置上下文裁剪保底轮数
+/profile <name>    切换对话场景（default/code/debug/review）
+/model <name>      切换模型
+/sessions          会话管理（list/export/rm）
+/switch <名称|编号> 切换到指定会话
+/save              保存当前会话（含 AI 标题推荐）
+/title [名称]       设置或 AI 生成会话标题
+/copy              复制最后一条 AI 回复到剪贴板
+/tools             显示工具和命令帮助
+/rules <路径>       注入项目规则文件到 system prompt
+/verbose on|off    切换详细日志
+/workspace [路径]   查看/设置工作区
+/status            查看运行状态
+/su                中级提权（写文件 + run_python 沙箱）
+/su+               完全放行（任意命令 + 完整 Python）
+/think on|off|high|max|reset 思考模式
+/reasoning on|off  显示推理过程开关
+/backup now|list|cleanup 备份管理
+/quota <N>|off     工具调用配额
+/audit [type|since] 审计日志查询
+/update            从 /sdcard/Download/tiao_update.zip 更新
+```
+
+## 路径白名单
+```
+/storage/emulated/0/Download
+/storage/emulated/0/Documents
+/storage/emulated/0/Pictures
+/storage/emulated/0/Music
+/storage/emulated/0/Movies
+/storage/emulated/0/DCIM
+/data/data/com.termux/files/home
+项目代码所在目录（硬保护只读）
+```
