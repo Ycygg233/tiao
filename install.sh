@@ -271,113 +271,118 @@ echo ""
 # ═══════════════════════════════════════════
 step "Python 依赖"
 
+# 需要安装的包（不含依赖，仅用于最终验证）
+_CRITICAL_PKGS="PyYAML tiktoken fastapi uvicorn httpx"
+
+# ═══════════════════════════════════════════
+# Line 1：预编译轮子（优先，仅限匹配 Python 版本）
+# ═══════════════════════════════════════════
+echo -e "  ${DIM}── Line 1：预编译轮子 ──${NC}"
 WHEEL_DIR="$SCRIPT_DIR/wheels"
+_DL_COUNT=0
+_INSTALLED_WHEELS=""
 
-# ── 优先安装本地 wheel ─────────────────────
-if [ -d "$WHEEL_DIR" ] && ls "$WHEEL_DIR"/*.whl &>/dev/null; then
-    echo -e "  ${DIM}  发现 $(ls "$WHEEL_DIR"/*.whl 2>/dev/null | wc -l) 个预编译 wheel${NC}"
-
-    # 单独装 pydantic_core（fastapi 的 C 核心，必须先装）
-    for whl in "$WHEEL_DIR"/pydantic_core-*.whl; do
-        [ -f "$whl" ] || continue
-        if wheel_compatible "$whl"; then
-            doing "安装 pydantic_core（预编译）..."
-            python3 -m pip install "$whl" --quiet 2>&1 && \
-                echo -e "     ${GREEN}✓${NC} $(basename "$whl")"
-        fi
-        break
-    done
-
-    # 批量装其余 wheel（tiktoken, pyyaml, regex, tree_sitter, watchdog, maturin）
-    # 按优先级排列
-    install_local_wheels "$WHEEL_DIR" \
-        tiktoken pyyaml regex tree_sitter watchdog maturin
-
-else
-    echo -e "  ${DIM}  wheels/ 为空，尝试从 GitHub 下载预编译轮子...${NC}"
-    _GH="https://raw.githubusercontent.com/Ycygg233/tiao/main/wheels"
-    _WHLS="maturin pydantic_core pyyaml regex tiktoken tree_sitter watchdog"
-    _DL_COUNT=0
+# 尝试从本地或 GitHub 获取匹配的轮子
+if [ ! -d "$WHEEL_DIR" ] || [ -z "$(ls "$WHEEL_DIR"/*.whl 2>/dev/null)" ]; then
+    # 从 GitHub 下载
     mkdir -p "$WHEEL_DIR"
-    for _name in $_WHLS; do
-        # 远程列出匹配的文件（通过 curl 试探）
-        _remote=$_GH/${_name}-*.whl
-        # 直接用 Python 获取 wheel 列表（更精确）
+    _WHL_NAMES="pydantic_core pyyaml regex tiktoken tree_sitter watchdog"
+    for _name in $_WHL_NAMES; do
         _matched=$(python3 -c "
-import re, urllib.request, os
+import urllib.request, json
 name = '$_name'
-py_major = '$PY_MAJOR'
-py_minor = '$PY_MINOR'
+py_ver = 'cp${PY_MAJOR}${PY_MINOR}'
 url = 'https://api.github.com/repos/Ycygg233/tiao/contents/wheels'
 try:
     with urllib.request.urlopen(url, timeout=10) as r:
-        import json
-        files = json.loads(r.read())
-        for f in files:
+        for f in json.loads(r.read()):
             fn = f['name']
-            if fn.startswith(name) and f'cp{py_major}{py_minor}' in fn:
-                print(fn)
-                break
+            if fn.startswith(name) and (py_ver in fn or 'py3-none-any' in fn):
+                print(fn); break
 except: pass
 " 2>/dev/null)
         if [ -n "$_matched" ]; then
-            doing "  下载 $_matched..."
             curl -sL "https://raw.githubusercontent.com/Ycygg233/tiao/main/wheels/$_matched" \
                 -o "$WHEEL_DIR/$_matched" && _DL_COUNT=$((_DL_COUNT + 1)) || true
         fi
     done
-    if [ "$_DL_COUNT" -gt 0 ]; then
-        echo -e "     ${GREEN}✓${NC} 已下载 $_DL_COUNT 个预编译 wheel"
-    else
-        echo -e "  ${DIM}  未找到匹配的预编译轮子，走在线安装${NC}"
-    fi
+    [ "$_DL_COUNT" -gt 0 ] && echo -e "  ${GREEN}✓${NC} 已下载 $_DL_COUNT 个预编译 wheel" \
+        || echo -e "  ${DIM}  无匹配轮子${NC}"
 fi
 
-# ── 补充安装 requirements.txt 完整依赖 ──────
-doing "安装 requirements.txt 所有依赖..."
-
-# 先确保纯 Python 核心包
-python3 -m pip install rich prompt_toolkit requests --quiet 2>&1
-for pkg in rich prompt_toolkit requests; do
-    if python3 -m pip show "$pkg" &>/dev/null; then
-        ver=$(python3 -m pip show "$pkg" 2>/dev/null | grep -i "^version:" | awk '{print $2}')
-        echo -e "     ${GREEN}✓${NC} $pkg == $ver"
-    fi
+# 安装匹配的本地轮子（pydantic_core 必须先装）
+for whl in "$WHEEL_DIR"/pydantic_core-*.whl; do
+    [ -f "$whl" ] && wheel_compatible "$whl" || continue
+    doing "  安装 pydantic_core（预编译）..."
+    python3 -m pip install "$whl" --quiet 2>&1 && _INSTALLED_WHEELS="$_INSTALLED_WHEELS pydantic_core"
+    break
 done
 
-# 装 requirements.txt（会利用已装的 wheel 跳过编译）
-REQ_FILE="$SCRIPT_DIR/requirements.txt"
-if [ -f "$REQ_FILE" ]; then
-    python3 -m pip install -r "$REQ_FILE" 2>&1 || {
-        echo -e "  ${YELLOW}⚠️  批量安装部分失败，逐包尝试...${NC}"
-        while IFS= read -r line; do
-            [[ -z "$line" || "$line" =~ ^# ]] && continue
-            pkg_name=$(echo "$line" | sed -E 's/[><=!~].*//' | xargs)
-            [ -z "$pkg_name" ] && continue
+for whl in "$WHEEL_DIR"/*.whl; do
+    [ -f "$whl" ] || continue
+    [ "${whl##*/}" = "pydantic_core"* ] && continue  # 已装过
+    wheel_compatible "$whl" || continue
+    _name=$(basename "$whl" | sed -E 's/-[0-9].*//')
+    doing "  安装 $_name（预编译）..."
+    python3 -m pip install "$whl" --quiet 2>&1 && _INSTALLED_WHEELS="$_INSTALLED_WHEELS $_name"
+done
 
-            if python3 -m pip show "$pkg_name" &>/dev/null; then
-                echo -e "     ${GREEN}✓${NC} $pkg_name"
-            else
-                doing "  $pkg_name..."
-                python3 -m pip install "$pkg_name" 2>&1 && \
-                    echo -e "     ${GREEN}✓${NC} $pkg_name" || \
-                    echo -e "     ${YELLOW}⚠️  $pkg_name 失败，若提示缺少 Rust 请执行: pkg install rust${NC}"
-            fi
-        done < "$REQ_FILE"
-    }
+if [ -n "$_INSTALLED_WHEELS" ]; then
+    echo -e "  ${GREEN}✅ 预编译轮子已安装:$_INSTALLED_WHEELS${NC}"
 fi
 
-# ── 验证关键包 ────────────────────────────
+# ═══════════════════════════════════════════
+# Line 2：编译兜底（安装缺失的依赖）
+# ═══════════════════════════════════════════
+echo -e "  ${DIM}── Line 2：检查缺失依赖 ──${NC}"
+
+# 找出还没装的关键包
+_MISSING=""
+for _pkg in $_CRITICAL_PKGS; do
+    python3 -c "import $_pkg" 2>/dev/null || _MISSING="$_MISSING $_pkg"
+done
+
+if [ -n "$_MISSING" ]; then
+    # 装编译工具
+    _NEED_BUILD=""
+    command -v clang &>/dev/null || _NEED_BUILD="$_NEED_BUILD clang"
+    command -v ld &>/dev/null || _NEED_BUILD="$_NEED_BUILD binutils"
+    command -v rustc &>/dev/null || _NEED_BUILD="$_NEED_BUILD rust"
+    [ -n "$_NEED_BUILD" ] && pkg install $_NEED_BUILD -y -qq 2>/dev/null \
+        && echo -e "  ${GREEN}✓${NC} 已安装编译工具:$_NEED_BUILD"
+
+    # 批量 pip 安装缺失包
+    for _pkg in $_MISSING; do
+        doing "  编译安装 $_pkg..."
+        python3 -m pip install "$_pkg" 2>&1 && \
+            echo -e "     ${GREEN}✓${NC} $_pkg" || \
+            echo -e "     ${RED}✗${NC} $_pkg 安装失败"
+    done
+else
+    echo -e "  ${GREEN}✓${NC} 关键依赖已齐全"
+fi
+
+# ═══════════════════════════════════════════
+# Final Check：最终验证
+# ═══════════════════════════════════════════
 echo ""
-doing "验证关键依赖..."
+doing "最终验证..."
+_ALL_OK=true
 for pkg in rich prompt_toolkit requests PyYAML tiktoken fastapi uvicorn httpx; do
-    if python3 -m pip show "$pkg" &>/dev/null; then
-        ver=$(python3 -m pip show "$pkg" 2>/dev/null | grep -i "^version:" | awk '{print $2}')
+    ver=$(python3 -m pip show "$pkg" 2>/dev/null | grep -i "^version:" | awk '{print $2}')
+    if [ -n "$ver" ]; then
         echo -e "     ${GREEN}✓${NC} $pkg == $ver"
     else
         echo -e "     ${RED}✗${NC} $pkg（未安装）"
+        _ALL_OK=false
     fi
 done
+
+if [ "$_ALL_OK" = false ]; then
+    echo ""
+    echo -e "  ${YELLOW}⚠️  部分依赖未安装，可能影响 Web 模式运行${NC}"
+    echo -e "  ${DIM}     可手动执行: pip install PyYAML tiktoken fastapi uvicorn httpx${NC}"
+fi
 echo ""
 
 # ═══════════════════════════════════════════
