@@ -24,7 +24,7 @@ Termux 终端内的 AI 助手，CLI REPL(核心) + Web UI 双模式。支持流�
 
 ### 一键安装（推荐）
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ycygg233/tiao/main/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ycygg233/tiao/main/install.sh)" -- -y
 ```
 
 ### 本地脚本安装
