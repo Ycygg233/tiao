@@ -34,7 +34,7 @@ from session import (
 from skills.prompts import load_skills, build_system_prompt
 from commands import TiaoCompleter, dispatch as cmd_dispatch, DispatchResult
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 # ========== 插件目录扫描 ==========
 
