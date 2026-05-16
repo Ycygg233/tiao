@@ -6,6 +6,7 @@ REPL + 流式渲染 + Agent 循环
 
 import os
 import sys
+import time
 import socket
 import logging
 from logging.handlers import TimedRotatingFileHandler
@@ -359,12 +360,36 @@ def main():
   _total_since_save = 0
 
   def _do_save(exit_save=False):
-    """统一保存入口。exit_save=True 时生成标题。"""
+    """统一保存入口。exit_save=True 时尝试生成标题并缓存。"""
     if len(messages) <= 1:
       return
     name = ctx.get("session_name", "")
     if exit_save and not name:
-      name = generate_session_title(messages) or ""
+      # 失败冷却：1分钟内不重复请求 API
+      now = time.time()
+      last_try = ctx.get("_last_title_attempt", 0)
+      if now - last_try >= 60:
+        ctx["_last_title_attempt"] = now
+        name = generate_session_title(messages) or ""
+        if name:
+          ctx["session_name"] = name
+          ctx["_auto_titled"] = True
+      else:
+        log.debug("标题生成冷却中，跳过")
+    if not name:
+      # 降级兜底：取首条 user 消息前15字
+      for m in messages:
+        if m.get("role") == "user":
+          c = m.get("content", "")
+          if c and not c.startswith("@"):
+            title = c[:15].strip()
+            if title:
+              name = title
+              ctx["session_name"] = name
+              ctx["_auto_titled"] = True
+            break
+    if not name:
+      return  # 实在没名字就不保存
     save_session(messages, CONFIG, name)
 
   while True:

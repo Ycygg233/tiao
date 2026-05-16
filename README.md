@@ -8,33 +8,14 @@ Termux 终端内的 AI 助手，CLI REPL(核心) + Web UI 双模式。支持流�
 
 ---
 
-## 📸 截图
-
-| CLI 启动 | CLI 对话 |
-|:--------:|:--------:|
-| ![CLI 启动](assets/Screenshot_startup.jpg) | ![CLI 对话](assets/Screenshot_chat1.jpg) |
-
-| CLI 对话 2 | Web 启动 | Web 对话 |
-|:----------:|:--------:|:--------:|
-| ![CLI 对话 2](assets/Screenshot_chat2.jpg) | ![Web 启动](assets/Screenshot_web_startup.jpg) | ![Web 对话](assets/Screenshot_web_chat.jpg) |
-
----
-
 ## 📦 快速开始
 
-### 一键安装（推荐）
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ycygg233/tiao/main/install.sh)" -- -y
-```
-
-### 本地脚本安装
-```bash
+# 方式一：全自动安装（推荐）
 bash install.sh
-```
 
-### 手动安装（预编译轮子不匹配时）
-```bash
-cd ~/tiao
+# 方式二：手动安装（当 install.sh 的预编译轮子不匹配你的 Python 版本时）
+cd ~/tiao                        # 进入项目目录
 pip install -r requirements.txt
 python main.py
 ```
@@ -488,10 +469,4 @@ log_event(type, module, data, level)
 
 ---
 
-
-> 代码由 DeepSeek（主力，约 30 亿词元）与 Kimi(辅助) 协同生成，
-> Icon 由腾讯元宝绘制，[Ycygg233](https://github.com/Ycygg233) 设计需求、主导界面并反馈 Bug。
-> 零代码经验 × AI 协作，亦可高效落地 🤝
->
-> deepseek某实例代笔
 

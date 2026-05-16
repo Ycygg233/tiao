@@ -29,10 +29,12 @@ def _cmd_new(ctx) -> str:
   if len(messages) > 1:
     if not session_name:
       session_name = generate_session_title(messages) or ""
-    name = save_session(messages, CONFIG, session_name)
-    if name:
-      ctx["log"].debug("会话已保存: %s", name)
+    if session_name:
+      name = save_session(messages, CONFIG, session_name)
+      if name:
+        ctx["log"].debug("会话已保存: %s", name)
   ctx["session_name"] = ""
+  ctx["_auto_titled"] = False
   _log.info("[SESSION] session= (新对话)")
   messages.clear()
   messages.append(system_prompt)

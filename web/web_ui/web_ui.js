@@ -336,7 +336,7 @@ document.getElementById('op-shutdown').onclick = function() {
   Utils.apiFetch('/shutdown', {method:'POST'}).catch(function(){});
 };
 document.getElementById('op-about').onclick = function() {
-  window.open('https://github.com/your-username/tiao', '_blank');
+  window.open('https://github.com/Ycygg233/tiao', '_blank');
 };
 
 // ===== 主题切换 =====

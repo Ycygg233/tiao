@@ -469,8 +469,15 @@ else
     echo -e "     ${CYAN}tiao${NC} — 启动 AI 助手"
     echo -e "     ${CYAN}ai${NC} — 启动 AI 助手（别名）"
     echo -e "     ${CYAN}tiao-web${NC} — 启动 Web 模式"
-    source "$BASHRC"
-    echo -e "  ${GREEN}✅ 别名已加载，现在可以直接使用 tiao / tiao-web 命令${NC}"
+    echo -e ""
+    echo -e "  ${GREEN}╔══════════════════════════════════════════════╗${NC}"
+    echo -e "  ${GREEN}║  🎉 安装完成！                           ║${NC}"
+    echo -e "  ${GREEN}║                                              ║${NC}"
+    echo -e "  ${GREEN}║  ① source ~/.bashrc                         ║${NC}"
+    echo -e "  ${GREEN}║  ② tiao                                     ║${NC}"
+    echo -e "  ${GREEN}║                                              ║${NC}"
+    echo -e "  ${GREEN}║  或重启 Termux 后直接输入 tiao                ║${NC}"
+    echo -e "  ${GREEN}╚══════════════════════════════════════════════╝${NC}"
 fi
 echo ""
 
