@@ -247,6 +247,23 @@ else
         echo -e "  ${YELLOW}⚠️  安装失败，paste 工具不可用（不影响核心功能）${NC}"
     fi
 fi
+
+# ── Python 扩展编译依赖（轮子不匹配时自动安装） ──
+doing "检查 Python 扩展编译环境..."
+_BUILD_DEPS=""
+if ! command -v clang &>/dev/null; then
+    _BUILD_DEPS="$_BUILD_DEPS clang"
+fi
+if ! command -v ld &>/dev/null; then
+    _BUILD_DEPS="$_BUILD_DEPS binutils"
+fi
+if ! command -v rustc &>/dev/null; then
+    _BUILD_DEPS="$_BUILD_DEPS rust"
+fi
+if [ -n "$_BUILD_DEPS" ]; then
+    doing "安装编译依赖:$_BUILD_DEPS"
+    pkg install $_BUILD_DEPS -y -qq 2>/dev/null || echo -e "  ${YELLOW}⚠️  部分编译依赖安装失败，若后续 pip 报错请手动安装${NC}"
+fi
 echo ""
 
 # ═══════════════════════════════════════════
@@ -277,7 +294,43 @@ if [ -d "$WHEEL_DIR" ] && ls "$WHEEL_DIR"/*.whl &>/dev/null; then
         tiktoken pyyaml regex tree_sitter watchdog maturin
 
 else
-    echo -e "  ${DIM}  wheels/ 为空，全走在线安装${NC}"
+    echo -e "  ${DIM}  wheels/ 为空，尝试从 GitHub 下载预编译轮子...${NC}"
+    _GH="https://raw.githubusercontent.com/Ycygg233/tiao/main/wheels"
+    _WHLS="maturin pydantic_core pyyaml regex tiktoken tree_sitter watchdog"
+    _DL_COUNT=0
+    mkdir -p "$WHEEL_DIR"
+    for _name in $_WHLS; do
+        # 远程列出匹配的文件（通过 curl 试探）
+        _remote=$_GH/${_name}-*.whl
+        # 直接用 Python 获取 wheel 列表（更精确）
+        _matched=$(python3 -c "
+import re, urllib.request, os
+name = '$_name'
+py_major = '$PY_MAJOR'
+py_minor = '$PY_MINOR'
+url = 'https://api.github.com/repos/Ycygg233/tiao/contents/wheels'
+try:
+    with urllib.request.urlopen(url, timeout=10) as r:
+        import json
+        files = json.loads(r.read())
+        for f in files:
+            fn = f['name']
+            if fn.startswith(name) and f'cp{py_major}{py_minor}' in fn:
+                print(fn)
+                break
+except: pass
+" 2>/dev/null)
+        if [ -n "$_matched" ]; then
+            doing "  下载 $_matched..."
+            curl -sL "https://raw.githubusercontent.com/Ycygg233/tiao/main/wheels/$_matched" \
+                -o "$WHEEL_DIR/$_matched" && _DL_COUNT=$((_DL_COUNT + 1)) || true
+        fi
+    done
+    if [ "$_DL_COUNT" -gt 0 ]; then
+        echo -e "     ${GREEN}✓${NC} 已下载 $_DL_COUNT 个预编译 wheel"
+    else
+        echo -e "  ${DIM}  未找到匹配的预编译轮子，走在线安装${NC}"
+    fi
 fi
 
 # ── 补充安装 requirements.txt 完整依赖 ──────
@@ -295,7 +348,7 @@ done
 # 装 requirements.txt（会利用已装的 wheel 跳过编译）
 REQ_FILE="$SCRIPT_DIR/requirements.txt"
 if [ -f "$REQ_FILE" ]; then
-    python3 -m pip install -r "$REQ_FILE" --quiet 2>&1 || {
+    python3 -m pip install -r "$REQ_FILE" 2>&1 || {
         echo -e "  ${YELLOW}⚠️  批量安装部分失败，逐包尝试...${NC}"
         while IFS= read -r line; do
             [[ -z "$line" || "$line" =~ ^# ]] && continue
@@ -306,9 +359,9 @@ if [ -f "$REQ_FILE" ]; then
                 echo -e "     ${GREEN}✓${NC} $pkg_name"
             else
                 doing "  $pkg_name..."
-                python3 -m pip install "$pkg_name" --quiet 2>&1 && \
+                python3 -m pip install "$pkg_name" 2>&1 && \
                     echo -e "     ${GREEN}✓${NC} $pkg_name" || \
-                    echo -e "     ${YELLOW}⚠️  $pkg_name 失败${NC}"
+                    echo -e "     ${YELLOW}⚠️  $pkg_name 失败，若提示缺少 Rust 请执行: pkg install rust${NC}"
             fi
         done < "$REQ_FILE"
     }
@@ -332,14 +385,9 @@ echo ""
 # ═══════════════════════════════════════════
 step "部署 & 启动配置"
 
-ALREADY_DEPLOYED=false
-[ -f "$INSTALL_DIR/main.py" ] && [ -f "$INSTALL_DIR/config.py" ] && ALREADY_DEPLOYED=true
-
-if [ "$SCRIPT_DIR" = "$INSTALL_DIR" ]; then
-    skip "已在目标目录，跳过复制"
-elif [ "$ALREADY_DEPLOYED" = true ]; then
-    skip "项目文件已存在，跳过复制"
-else
+if [ -f "$INSTALL_DIR/main.py" ] && [ -f "$INSTALL_DIR/config.py" ]; then
+    skip "项目文件已存在，跳过部署"
+elif [ -f "$SCRIPT_DIR/main.py" ]; then
     doing "部署到 ${INSTALL_DIR}..."
     mkdir -p "$INSTALL_DIR"
 
@@ -363,17 +411,28 @@ else
         cp "$SCRIPT_DIR/wheels"/*.whl "$INSTALL_DIR/wheels/"
     fi
 
-    # YAML 配置（已在 security/ 目录中）
+    ok "文件部署完成（含 wheels/ 预编译包）"
+else
+    doing "未找到本地源码，从 GitHub 下载..."
+    _TMP_ZIP=$(mktemp)
+    curl -sL "https://github.com/Ycygg233/tiao/archive/refs/heads/main.zip" -o "$_TMP_ZIP"
+    _TMP_DIR=$(mktemp -d)
+    unzip -q "$_TMP_ZIP" -d "$_TMP_DIR"
+    rm -f "$_TMP_ZIP"
+    cp -r "$_TMP_DIR/tiao-main/"* "$INSTALL_DIR/"
+    rm -rf "$_TMP_DIR"
+    ok "文件部署完成（从 GitHub 下载）"
+fi
 
-    # 数据目录（~/.tiao_data/）
-    DATA_DIR="$HOME/.tiao_data"
-    for dir in sessions logs search_cache; do
-        mkdir -p "$DATA_DIR/$dir"
-    done
+# ── 运行时数据目录 ──────────────────────────
+DATA_DIR="$HOME/.tiao_data"
+for dir in sessions logs search_cache; do
+    mkdir -p "$DATA_DIR/$dir"
+done
 
-    # .gitignore
-    if [ ! -f "$INSTALL_DIR/.gitignore" ]; then
-        cat > "$INSTALL_DIR/.gitignore" << 'GITIGNORE'
+# ── .gitignore ──────────────────────────────
+if [ ! -f "$INSTALL_DIR/.gitignore" ]; then
+    cat > "$INSTALL_DIR/.gitignore" << 'GITIGNORE'
 __pycache__/
 .pytest_cache/
 .session/
@@ -383,10 +442,8 @@ __pycache__/
 _smoke_tmp/
 wheels/
 GITIGNORE
-    fi
-
-    ok "文件部署完成（含 wheels/ 预编译包）"
 fi
+
 echo ""
 
 # ── 启动别名 ───────────────────────────────
@@ -407,6 +464,8 @@ else
     echo -e "     ${CYAN}tiao${NC} — 启动 AI 助手"
     echo -e "     ${CYAN}ai${NC} — 启动 AI 助手（别名）"
     echo -e "     ${CYAN}tiao-web${NC} — 启动 Web 模式"
+    source "$BASHRC"
+    echo -e "  ${GREEN}✅ 别名已加载，现在可以直接使用 tiao / tiao-web 命令${NC}"
 fi
 echo ""
 
